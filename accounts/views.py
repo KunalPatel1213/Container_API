@@ -51,17 +51,25 @@ class UserListView(APIView):
 class RegisterView(APIView):
     permission_classes = [AllowAny]    
 
-    def get(self,request):
-        users = Register.objects.all()
-        serializer = RegisterSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    def get(self, request):
+        users = Register.objects.all().values('id', 'fullname', 'email')
+        return Response({
+            "success": True,
+            "total_users": users.count(),
+            "data": list(users)
+        }, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
-        # Always return a Response, even if invalid
+            users = Register.objects.all().values('id', 'fullname', 'email')
+            return Response({
+                "success": True,
+                "message": "User registered successfully!",
+                "total_users": users.count(),
+                "data": list(users)
+            }, status=status.HTTP_201_CREATED)
         return Response({
             "success": False,
             "errors": serializer.errors,
