@@ -40,7 +40,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'accounts',
     'chat',
-    'Booking'
+    'Booking',
+    'booking_validation',
 ]
 
 MIDDLEWARE = [
