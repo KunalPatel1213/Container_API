@@ -23,5 +23,7 @@ urlpatterns = [
     path('chat/', include('chat.urls')),
     path('bookings/', include('Booking.urls')),
     path('booking-validation/', include('booking_validation.urls')),
+    path('addContainer/', include('add_container.urls')),
+
 ]
 

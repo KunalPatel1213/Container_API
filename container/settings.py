@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'chat',
     'Booking',
     'booking_validation',
+    'add_container',
 ]
 
 MIDDLEWARE = [
