@@ -1,67 +1,81 @@
+from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
+
 from .models import Register
 
 
-
-class RegisterSerializer(serializers.ModelSerializer):
-    fullname = serializers.CharField(required=True)
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, required=True)
-    confirm_password = serializers.CharField(write_only=True, required=True)
-
-    def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        # Replace password with 'hashed_password' in GET response
-        rep['password'] = 'hashed_password'
-        return rep
-    def create(self, validated_data):
-        password = validated_data.pop('password')
-        validated_data.pop('confirm_password')
-        user = Register(
-            fullname=validated_data['fullname'],
-            email=validated_data['email']
-        )
-        user.set_password(password)
-        user.save()
-        return user
+User = get_user_model()
 
 
+class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Register
-        fields = ['id', 'fullname', 'email', 'password', 'confirm_password']
-        extra_kwargs = {
-            'confirm_password': {'write_only': True},
-            'fullname': {'required': True},
-            'email': {'required': True},
-        }
+        fields = ["id", "fullname", "company", "email", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
+
+class RegisterSerializer(serializers.Serializer):
+    fullname = serializers.CharField(max_length=50)
+    company = serializers.CharField(max_length=100, required=False, default="Unknown")
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     def validate_email(self, value):
-        if not value:
-            raise serializers.ValidationError("Email is required.")
-        if Register.objects.filter(email=value).exists():
+        email = value.lower()
+        if User.objects.filter(username__iexact=email).exists() or Register.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError("Email already exists.")
-        return value
+        return email
 
-
-    def validate(self, data):
-        if not data.get('fullname'):
-            raise serializers.ValidationError({"fullname": "Full name is required."})
-        if not data.get('password'):
-            raise serializers.ValidationError({"password": "Password is required."})
-        if not data.get('confirm_password'):
-            raise serializers.ValidationError({"confirm_password": "Confirm password is required."})
-        if data['password'] != data['confirm_password']:
+    def validate(self, attrs):
+        confirm_password = attrs.get("confirm_password") or attrs["password"]
+        if attrs["password"] != confirm_password:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
-        return data
+        try:
+            validate_password(attrs["password"])
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        attrs["confirm_password"] = confirm_password
+        return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
-        password = validated_data.pop('password')
-        validated_data.pop('confirm_password')
-        user = Register(
-            fullname=validated_data['fullname'],
-            email=validated_data['email']
+        validated_data.pop("confirm_password")
+        password = validated_data.pop("password")
+        fullname = validated_data["fullname"].strip()
+        email = validated_data["email"]
+        company = validated_data.get("company", "Unknown").strip() or "Unknown"
+
+        user = User.objects.create_user(
+            username=email,
+            email=email,
+            password=password,
+            first_name=fullname,
         )
-        user.set_password(password)
-        user.save()
-        return user
+        return Register.objects.create(
+            user=user,
+            fullname=fullname,
+            company=company,
+            email=email,
+        )
+
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs["email"].lower()
+        password = attrs["password"]
+        user = authenticate(username=email, password=password)
+
+        if user is None:
+            raise serializers.ValidationError("Invalid email or password.")
+        if not user.is_active:
+            raise serializers.ValidationError("This account is disabled.")
+
+        attrs["user"] = user
+        return attrs

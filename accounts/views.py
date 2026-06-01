@@ -1,119 +1,131 @@
-# Add user from web page
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
+from django.contrib.auth import get_user_model
 from django.shortcuts import render
-# JWT imports
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
-from rest_framework.response import Response
 from rest_framework import status
-from .models import Register
-from .serializers import RegisterSerializer
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.hashers import check_password
-# Web page view to show all users
+
+from .models import Register
+from .serializers import LoginSerializer, RegisterSerializer, UserProfileSerializer
+
+
+User = get_user_model()
+
 
 def add_user(request):
-    from django.shortcuts import redirect
     success = False
     error = None
-    if request.method == 'POST':
-        fullname = request.POST.get('fullname')
-        email = request.POST.get('email')
-        password = request.POST.get('password')
-        if not (fullname and email and password):
-            error = 'All fields are required.'
-        elif Register.objects.filter(email=email).exists():
-            error = 'Email already exists.'
-        else:
-            user = Register(fullname=fullname, email=email)
-            user.set_password(password)
-            user.save()
-            return render(request, 'accounts/add_user.html', {'success': True})
-    return render(request, 'accounts/add_user.html', {'success': success, 'error': error})
+
+    if request.method == "POST":
+        data = {
+            "fullname": request.POST.get("fullname"),
+            "company": request.POST.get("company") or "Unknown",
+            "email": request.POST.get("email"),
+            "password": request.POST.get("password"),
+            "confirm_password": request.POST.get("password"),
+        }
+        serializer = RegisterSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return render(request, "accounts/add_user.html", {"success": True})
+        error = serializer.errors
+
+    return render(request, "accounts/add_user.html", {"success": success, "error": error})
+
 
 def users_page(request):
-    users = Register.objects.all()
-    return render(request, 'accounts/users_page.html', {'users': users})
+    users = Register.objects.select_related("user").all()
+    return render(request, "accounts/users_page.html", {"users": users})
 
 
 class UserListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser]
 
     def get(self, request):
-        users = Register.objects.all().values('id', 'fullname', 'email')
+        users = Register.objects.select_related("user").all()
+        serializer = UserProfileSerializer(users, many=True)
         return Response({
             "success": True,
             "total_users": users.count(),
-            "data": list(users)
+            "data": serializer.data,
         })
 
-class RegisterView(APIView):
-    permission_classes = [AllowAny]    
 
-    def get(self, request):
-        users = Register.objects.all().values('id', 'fullname', 'email')
-        return Response({
-            "success": True,
-            "total_users": users.count(),
-            "data": list(users)
-        }, status=status.HTTP_200_OK)
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            users = Register.objects.all().values('id', 'fullname', 'email')
+            profile = serializer.save()
             return Response({
                 "success": True,
-                "message": "User registered successfully!",
-                "total_users": users.count(),
-                "data": list(users)
+                "message": "User registered successfully.",
+                "data": UserProfileSerializer(profile).data,
             }, status=status.HTTP_201_CREATED)
+
+        response_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        if "email" in serializer.errors:
+            response_status = status.HTTP_409_CONFLICT
+
         return Response({
             "success": False,
             "errors": serializer.errors,
-            "data": request.data
-        }, status=status.HTTP_400_BAD_REQUEST)
+        }, status=response_status)
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.data.get('email')
-        password = request.data.get('password')
-
-        if not email or not password:
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
                 "success": False,
-                "message": "Email and password are required."
+                "errors": serializer.errors,
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        user = serializer.validated_data["user"]
+        refresh = RefreshToken.for_user(user)
+        profile = getattr(user, "profile", None)
+
+        return Response({
+            "success": True,
+            "message": "Login successful.",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "data": {
+                "id": user.id,
+                "fullname": profile.fullname if profile else user.get_full_name(),
+                "company": profile.company if profile else "",
+                "email": user.email,
+            },
+        }, status=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if not refresh_token:
+            return Response({
+                "success": False,
+                "message": "Refresh token is required.",
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = Register.objects.get(email=email)
-        except Register.DoesNotExist:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except TokenError:
             return Response({
                 "success": False,
-                "message": "Invalid email or password."
-            }, status=status.HTTP_401_UNAUTHORIZED)
+                "message": "Invalid or expired refresh token.",
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check password using Django's check_password
-        
-        if check_password(password, user.password):
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "success": True,
-                "message": "Login successful!",
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "data": {
-                    "id": user.id,
-                    "fullname": user.fullname,
-                    "email": user.email
-                }
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({
-                "success": False,
-                "message": "Invalid email or password."
-            }, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({
+            "success": True,
+            "message": "Logout successful.",
+        }, status=status.HTTP_205_RESET_CONTENT)
