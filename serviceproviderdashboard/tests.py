@@ -67,7 +67,7 @@ class ServiceProviderAvailabilityTests(APITestCase):
     def test_create_availability_without_login_requires_service_provider(self):
         response = self.client.post(self.url, self.payload(), format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_user_cannot_see_other_users_availability(self):
         ServiceProviderAvailability.objects.create(user=self.user, **self.payload())

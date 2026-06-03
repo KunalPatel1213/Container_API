@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, login as django_login, logout as django_logout
 from django.shortcuts import render
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -60,9 +60,14 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             profile = serializer.save()
+            user = profile.user
+            django_login(request, user)
+            refresh = RefreshToken.for_user(user)
             return Response({
                 "success": True,
                 "message": "User registered successfully.",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
                 "data": UserProfileSerializer(profile).data,
             }, status=status.HTTP_201_CREATED)
 
@@ -88,6 +93,7 @@ class LoginView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         user = serializer.validated_data["user"]
+        django_login(request, user)
         refresh = RefreshToken.for_user(user)
         profile = getattr(user, "profile", None)
 
@@ -110,20 +116,17 @@ class LogoutView(APIView):
 
     def post(self, request):
         refresh_token = request.data.get("refresh")
-        if not refresh_token:
-            return Response({
-                "success": False,
-                "message": "Refresh token is required.",
-            }, status=status.HTTP_400_BAD_REQUEST)
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except TokenError:
+                return Response({
+                    "success": False,
+                    "message": "Invalid or expired refresh token.",
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-        except TokenError:
-            return Response({
-                "success": False,
-                "message": "Invalid or expired refresh token.",
-            }, status=status.HTTP_400_BAD_REQUEST)
+        django_logout(request)
 
         return Response({
             "success": True,

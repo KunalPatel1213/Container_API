@@ -1,4 +1,8 @@
+from django.contrib.auth import login as django_login
+from rest_framework import status
 from rest_framework import permissions, viewsets
+from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import ServiceProvider
 from .serializers import ServiceProviderSerializer, ServiceProviderUpdateSerializer
@@ -32,3 +36,17 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
         if user.is_staff:
             return queryset
         return queryset.filter(user=user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service_provider = serializer.save()
+        django_login(request, service_provider.user)
+        refresh = RefreshToken.for_user(service_provider.user)
+        return Response({
+            "success": True,
+            "message": "Service provider registered successfully.",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "data": serializer.data,
+        }, status=status.HTTP_201_CREATED)
