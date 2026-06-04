@@ -97,3 +97,39 @@ class ServiceProviderUpdateSerializer(ServiceProviderSerializer):
         if not value:
             return value
         return super().validate_password(value)
+
+class ServiceProviderLoginSerializer(serializers.Serializer):
+    username = serializers.CharField(required=True, allow_blank=False)
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True, allow_blank=False, trim_whitespace=False)
+
+    def validate(self, attrs):
+        username = attrs.get("username", "").strip()
+        email = attrs.get("email", "").strip().lower()
+        password = attrs.get("password", "")
+
+        provider = (
+            ServiceProvider.objects.select_related("user")
+            .filter(email__iexact=email)
+            .first()
+        )
+
+        if provider is None:
+            provider = (
+                ServiceProvider.objects.select_related("user")
+                .filter(name__iexact=username)
+                .first()
+            )
+
+        if provider is None:
+            raise serializers.ValidationError({"message": "Invalid email/name or password."})
+
+        if not provider.user.check_password(password):
+            raise serializers.ValidationError({"message": "Invalid email/name or password."})
+
+        if username.lower() not in {provider.email.lower(), provider.name.lower()}:
+            raise serializers.ValidationError({"message": "Invalid email/name or password."})
+
+        attrs["service_provider"] = provider
+        attrs["user"] = provider.user
+        return attrs

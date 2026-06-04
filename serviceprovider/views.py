@@ -1,11 +1,15 @@
-from django.contrib.auth import login as django_login
 from rest_framework import status
 from rest_framework import permissions, viewsets
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import ServiceProvider
-from .serializers import ServiceProviderSerializer, ServiceProviderUpdateSerializer
+from .serializers import (
+    ServiceProviderLoginSerializer,
+    ServiceProviderSerializer,
+    ServiceProviderUpdateSerializer,
+)
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -50,3 +54,31 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
             "refresh": str(refresh),
             "data": serializer.data,
         }, status=status.HTTP_201_CREATED)
+
+class ServiceProviderLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ServiceProviderLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "message": "Invalid email/name or password.",
+                    "errors": serializer.errors,
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        service_provider = serializer.validated_data["service_provider"]
+
+        return Response(
+            {
+                "user": {
+                    "full_name": service_provider.name,
+                    "email": service_provider.email,
+                    "mobile_number": service_provider.mobile_number,
+                    "accountType": "serviceProvider",
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
