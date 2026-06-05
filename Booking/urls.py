@@ -6,5 +6,6 @@ router = DefaultRouter()
 router.register(r'bookings', BookingViewSet)
 
 urlpatterns = [
+    path('payment-sync/', BookingViewSet.as_view({'post': 'payment_sync'}), name='booking-payment-sync'),
     path('', include(router.urls)),
 ]

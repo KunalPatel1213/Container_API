@@ -43,6 +43,11 @@ class Booking(models.Model):
     razorpay_order_id = models.CharField(max_length=100, blank=True)
     razorpay_payment_id = models.CharField(max_length=100, blank=True)
     razorpay_signature = models.CharField(max_length=255, blank=True)
+    gowquick_order_id = models.CharField(max_length=100, blank=True)
+    gowquick_status = models.CharField(max_length=30, blank=True, default='')
+    gowquick_tracking_url = models.URLField(max_length=500, blank=True, default='')
+    gowquick_response = models.JSONField(blank=True, null=True)
+    gowquick_error = models.TextField(blank=True, default='')
 
     def __str__(self):
         return f"Booking {self.id}"
