@@ -3,6 +3,7 @@ from rest_framework import permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import login as django_login
 
 from .models import ServiceProvider
 from .serializers import (

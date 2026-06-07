@@ -34,7 +34,11 @@ class ServiceProvider(models.Model):
     )
     otp_verified = models.BooleanField(default=False)
     email = models.EmailField(unique=True)
+    account_type = models.CharField(max_length=50, default="serviceProvider")
     payment_setup = models.CharField(max_length=30, choices=PAYMENT_CHOICES)
+    billing_address = models.TextField(blank=True)
+    profile_photo_name = models.CharField(max_length=255, blank=True)
+    auth_provider = models.CharField(max_length=50, default="email")
     profile_photo = models.FileField(
         upload_to="serviceproviders/profile_photos/",
         blank=True,
