@@ -60,6 +60,8 @@ class ServiceProvider(models.Model):
 
     class Meta:
         ordering = ["name"]
+        verbose_name = "Service Provider Account"
+        verbose_name_plural = "Service Provider Accounts"
 
     def __str__(self):
         return f"{self.name} ({self.mobile_number})"

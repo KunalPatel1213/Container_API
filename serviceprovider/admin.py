@@ -5,7 +5,18 @@ from .models import ServiceProvider
 
 @admin.register(ServiceProvider)
 class ServiceProviderAdmin(admin.ModelAdmin):
-    list_display = ["name", "mobile_number", "email", "payment_setup", "otp_verified", "is_active"]
-    list_filter = ["payment_setup", "otp_verified", "is_active"]
-    search_fields = ["name", "mobile_number", "email"]
+    list_display = [
+        "id",
+        "name",
+        "mobile_number",
+        "email",
+        "account_type",
+        "payment_setup",
+        "otp_verified",
+        "is_active",
+        "created_at",
+    ]
+    list_filter = ["account_type", "payment_setup", "otp_verified", "is_active", "created_at"]
+    list_select_related = ["user"]
+    search_fields = ["name", "mobile_number", "email", "user__username"]
     readonly_fields = ["created_at", "updated_at"]

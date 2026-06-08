@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model, login as django_login, logout as django_logout
+from django.core.cache import cache
 from django.shortcuts import render
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -12,6 +13,53 @@ from .serializers import LoginSerializer, RegisterSerializer, UserProfileSeriali
 
 
 User = get_user_model()
+
+PROFILE_CACHE_TIMEOUT = 60 * 15
+USER_LIST_CACHE_TIMEOUT = 60 * 5
+USER_LIST_VERSION_KEY = "accounts:user-list:version"
+
+
+def _get_user_list_cache_version():
+    version = cache.get(USER_LIST_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(USER_LIST_VERSION_KEY, version, None)
+    return version
+
+
+def _bump_user_list_cache_version():
+    cache.set(USER_LIST_VERSION_KEY, _get_user_list_cache_version() + 1, None)
+
+
+def _profile_cache_key(user_id):
+    return f"accounts:profile:{user_id}"
+
+
+def _profile_payload(user):
+    cached_profile = cache.get(_profile_cache_key(user.id))
+    if cached_profile is not None:
+        return cached_profile
+
+    profile = Register.objects.filter(user_id=user.id).first()
+    payload = {
+        "id": user.id,
+        "fullname": profile.fullname if profile else user.get_full_name(),
+        "company": profile.company if profile else "",
+        "email": user.email,
+    }
+    cache.set(_profile_cache_key(user.id), payload, PROFILE_CACHE_TIMEOUT)
+    return payload
+
+
+def _cache_profile(profile):
+    payload = {
+        "id": profile.user_id,
+        "fullname": profile.fullname,
+        "company": profile.company,
+        "email": profile.email,
+    }
+    cache.set(_profile_cache_key(profile.user_id), payload, PROFILE_CACHE_TIMEOUT)
+    return payload
 
 
 def add_user(request):
@@ -44,13 +92,20 @@ class UserListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
+        cache_key = f"accounts:user-list:{_get_user_list_cache_version()}"
+        cached_response = cache.get(cache_key)
+        if cached_response is not None:
+            return Response(cached_response)
+
         users = Register.objects.select_related("user").all()
         serializer = UserProfileSerializer(users, many=True)
-        return Response({
+        response_data = {
             "success": True,
             "total_users": users.count(),
             "data": serializer.data,
-        })
+        }
+        cache.set(cache_key, response_data, USER_LIST_CACHE_TIMEOUT)
+        return Response(response_data)
 
 
 class RegisterView(APIView):
@@ -61,6 +116,8 @@ class RegisterView(APIView):
         if serializer.is_valid():
             profile = serializer.save()
             user = profile.user
+            _cache_profile(profile)
+            _bump_user_list_cache_version()
             django_login(request, user)
             refresh = RefreshToken.for_user(user)
             return Response({
@@ -95,19 +152,14 @@ class LoginView(APIView):
         user = serializer.validated_data["user"]
         django_login(request, user)
         refresh = RefreshToken.for_user(user)
-        profile = getattr(user, "profile", None)
+        profile_data = _profile_payload(user)
 
         return Response({
             "success": True,
             "message": "Login successful.",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "data": {
-                "id": user.id,
-                "fullname": profile.fullname if profile else user.get_full_name(),
-                "company": profile.company if profile else "",
-                "email": user.email,
-            },
+            "data": profile_data,
         }, status=status.HTTP_200_OK)
 
 

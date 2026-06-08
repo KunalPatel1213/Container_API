@@ -16,6 +16,8 @@ class Register(models.Model):
 
     class Meta:
         ordering = ["fullname"]
+        verbose_name = "User Account"
+        verbose_name_plural = "User Accounts"
 
     def __str__(self):
         return f"{self.fullname} ({self.company})"
